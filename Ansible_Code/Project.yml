@@ -1,0 +1,119 @@
+- hosts: all
+  #gather_facts: false
+  tasks:
+   - name: status of directory dvd
+     stat:
+      path: /dvd
+     register: stat_result
+
+   - name: file directory report  
+     debug:
+       var: stat_result.stat.exists
+    
+   - name: Creating Directory
+     file:
+      path: /dvd 
+      state: directory
+      mode: 0755
+     when: not stat_result.stat.exists 
+
+   - name: Creating Mount Point
+     mount: 
+      path: /dvd
+      src: /dev/cdrom
+      state: mounted
+      fstype: iso9660  
+
+   -  name: Creating Yum Repository Part 1
+      yum_repository:
+       name: redhat_dvd_1
+       description: yum_configure
+       file: dvd
+       baseurl: file:///dvd/AppStream
+       gpgcheck: no
+
+   -  name: Creating Yum Repository Part 2
+      yum_repository:
+       name: redhat_dvd_2
+       description: yum_configure
+       file: dvd
+       baseurl: file:///dvd/BaseOS
+       gpgcheck: no     
+  
+
+   -  name: Creating Docker Repository
+      yum_repository:
+       name: docker
+       description: yum_configure
+       file: docker
+       baseurl: https://download.docker.com/linux/centos/7/x86_64/stable/
+       gpgcheck: no
+
+   - name: Gather rpm facts
+     package_facts: 
+        manager: auto
+
+   - name: Install Docker
+     command: yum install docker-ce --nobest -y
+     when: not ansible_facts.packages['docker-ce']
+   
+   - name: Starting Docker Services
+     service:
+      name: 'docker'
+      state: started
+      enabled: yes
+
+   - name: Install python36
+     package:
+      name: 'python36'
+      state: present
+
+   - name: Install Docker Python Library
+     pip:
+      name: docker-py
+
+   - name: Docker pull image
+     docker_image:
+      name: centos
+      source: pull
+
+   - name: Copy Dockerfile
+     copy: 
+      src: /root/Ansible_Code/docker
+      dest: /
+
+   - name: Firewall Configuration 
+     shell: |
+      firewall-cmd --zone=public --add-masquerade --permanent
+      firewall-cmd --zone=public --add-port=80/tcp
+      firewall-cmd --zone=public --add-port=443/tcp
+      firewall-cmd --reload
+
+   - name: Customized Docker Image
+     docker_image:
+      name: webserver:v1
+      path: /docker
+
+   - name: Launch Container
+     docker_container:
+       name: web
+       image: webserver:v1
+       state: started
+       ports: 
+        - "80"
+       tty: true
+       detach: true  
+     register: container_facts     
+      
+   - name: Port Number Assigned to Container
+     debug:   
+      msg: "URL : - {{ ansible_all_ipv4_addresses[0] }}:{{ docker_container['NetworkSettings']['Ports']['80/tcp'][0]['HostPort'] }}/webpage.html"
+        
+   
+       
+      
+
+
+
+
+      
